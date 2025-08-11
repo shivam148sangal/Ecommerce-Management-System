@@ -24,7 +24,7 @@ The system uses a **simple command-line menu** for easy inventory and order hand
 
 Install the required library:
 
-pip install mysql-connector-python
+     pip install mysql-connector-python
 
 
 ## ⚙️ Setup
