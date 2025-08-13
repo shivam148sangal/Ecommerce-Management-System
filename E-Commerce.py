@@ -1,31 +1,32 @@
 """
-E-commerce Product Management System (
-
+E-commerce Product Management System (Self-contained, auto-creates DB & tables)
+Requires: mysql-connector-python
+Install: pip install mysql-connector-python
+Change DB_USER and DB_PASS below to match your MySQL credentials.
 """
 
-import mysql.connector 
+import mysql.connector
 from mysql.connector import Error
-import os 
+from datetime import datetime, date
 import csv
-import time
+import os
 import decimal
 
 DB_HOST = "localhost"
 DB_USER = "root"        # <-- change this
 DB_PASS = "@Shivam94102"   # <-- change this
-DB_NAME = "ecommerce_db" 
+DB_NAME = "eco"
 
 # ---------------------------
 # 1) Connect to MySQL server and create database if needed
 # ---------------------------
-
 try:
     root_conn = mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASS)
     root_cursor = root_conn.cursor()
-    root_cursor.execute("CREATE DATABASE IF NOT EXISTS {}".format(DB_NAME))
+    root_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
     root_conn.commit()
     root_cursor.close()
-    root_conn.close()   
+    root_conn.close()
 except Error as e:
     print("Error connecting to MySQL server:", e)
     raise SystemExit(1)
@@ -43,7 +44,6 @@ except Error as e:
 # ---------------------------
 # 3) Create tables (if not exists)
 # ---------------------------
-
 TABLES = {}
 
 TABLES['categories'] = """
@@ -110,7 +110,6 @@ mydb.commit()
 # ---------------------------
 # 4) Seed sample categories & products (only if empty)
 # ---------------------------
-
 def seed_data():
     cursor.execute("SELECT COUNT(*) FROM categories")
     if cursor.fetchone()[0] == 0:
@@ -140,11 +139,10 @@ def seed_data():
         )
         mydb.commit()
 
-
 seed_data()
 
 # ---------------------------
-# 5) Helper functions
+# 5) Helper utilities
 # ---------------------------
 def to_decimal(x):
     if isinstance(x, decimal.Decimal):
@@ -158,15 +156,13 @@ def clear_screen():
 # 6) Product & Category management
 # ---------------------------
 def list_categories():
-    cursor.execute("SELECT * FROM categories")
+    cursor.execute("SELECT category_id, name, description FROM categories")
     rows = cursor.fetchall()
-    
     print("\nCategories:")
     for r in rows:
-        print("{} - {}: {}".format(r[0],r[1],r[2]))
+        print(f"{r[0]} - {r[1]}: {r[2]}")
     if not rows:
         print("No categories found.")
-    print("\n")
 
 def add_category():
     name = input("Category name: ").strip()
@@ -177,9 +173,8 @@ def add_category():
         print("Category added.")
     except Error as e:
         print("Error adding category:", e)
-    print("\n")
 
-def list_products():
+def list_products(show_all=True):
     q = """SELECT p.product_id, p.sku, p.name, p.price, p.stock, c.name
            FROM products p LEFT JOIN categories c ON p.category_id = c.category_id
            ORDER BY p.created_on DESC"""
@@ -187,10 +182,9 @@ def list_products():
     rows = cursor.fetchall()
     print("\nProducts:")
     for r in rows:
-        print("ID:{} | SKU:{} | {} | ₹{} | Stock:{} | Category:{}".format(r[0],r[1],r[2],to_decimal(r[3]),r[4],r[5]))
+        print(f"ID:{r[0]} | SKU:{r[1]} | {r[2]} | ₹{to_decimal(r[3])} | Stock:{r[4]} | Category:{r[5]}")
     if not rows:
         print("No products found.")
-    print("\n")
 
 def add_product():
     sku = input("SKU (unique): ").strip()
@@ -210,7 +204,6 @@ def add_product():
         print("Product added.")
     except Error as e:
         print("Error adding product:", e)
-    print("\n")
 
 def update_stock():
     list_products()
@@ -220,15 +213,14 @@ def update_stock():
     r = cursor.fetchone()
     if not r:
         print("Product not found.")
-        return None
+        return
     new_stock = r[0] + delta
     if new_stock < 0:
         print("Error: resulting stock would be negative.")
-        return None
+        return
     cursor.execute("UPDATE products SET stock=%s WHERE product_id=%s", (new_stock, pid))
     mydb.commit()
     print("Stock updated.")
-    print("\n")
 
 def search_products():
     key = input("Search keyword (name or sku): ").strip()
@@ -239,10 +231,9 @@ def search_products():
     rows = cursor.fetchall()
     print("\nSearch Results:")
     for r in rows:
-        print("ID:{} | SKU:{} | {} | ₹{} | Stock:{}".format(r[0],r[1],r[2],to_decimal(r[3]),r[4]))
+        print(f"ID:{r[0]} | SKU:{r[1]} | {r[2]} | ₹{to_decimal(r[3])} | Stock:{r[4]}")
     if not rows:
-        print("No products matched.")  
-    print("\n")     
+        print("No products matched.")
 
 # ---------------------------
 # 7) Customer management
@@ -259,17 +250,15 @@ def add_customer():
         print("Customer added.")
     except Error as e:
         print("Error adding customer:", e)
-    print("\n")
 
 def list_customers():
-    cursor.execute("SELECT customer_id, name, email, phone, address FROM customers")
+    cursor.execute("SELECT customer_id, name, email, phone FROM customers")
     rows = cursor.fetchall()
     print("\nCustomers:")
     for r in rows:
         print(f"ID:{r[0]} | {r[1]} | {r[2]} | {r[3]}")
     if not rows:
         print("No customers yet.")
-    print("\n")
 
 # ---------------------------
 # 8) Orders: create, view, update status
@@ -289,31 +278,33 @@ def create_order():
     items = []
     while True:
         list_products()
-        pid = int(input("Enter product ID to add to order (0 to finish): "))
+        pid = int(input("Enter product ID to add to order (0 to finish): ").strip())
         if pid == 0:
             break
         qty = int(input("Quantity: ").strip())
         # check stock
-        cursor.execute("SELECT price, stock, name FROM products WHERE product_id={}".format(pid))
+        cursor.execute("SELECT price, stock, name FROM products WHERE product_id=%s", (pid,))
         rec = cursor.fetchone()
         if not rec:
             print("Invalid product ID.")
             continue
         price, stock, pname = rec
         if stock < qty:
-            print("Not enough stock for {}. Available: {}".format(pname,stock))
+            print(f"Not enough stock for {pname}. Available: {stock}")
             continue
         line_total = float(price) * qty
         items.append((pid, qty, float(price), line_total))
-        print("Added {} x {}".format(qty,pname))
+        print(f"Added {qty} x {pname}")
 
     if not items:
         print("No items in order. Aborting.")
-        return None
-    
+        return
+
     # Insert order and items within transaction
     try:
-        cursor.execute("INSERT INTO orders (customer_id, status, total_amount) VALUES (%s,%s,%s)",(cust_id, 'Processing', 0))
+        mydb.start_transaction()
+        cursor.execute("INSERT INTO orders (customer_id, status, total_amount) VALUES (%s,%s,%s)",
+                       (cust_id, 'Processing', 0))
         cursor.execute("SELECT LAST_INSERT_ID()")
         order_id = cursor.fetchone()[0]
 
@@ -323,19 +314,17 @@ def create_order():
                 "INSERT INTO order_items (order_id, product_id, quantity, unit_price, line_total) VALUES (%s,%s,%s,%s,%s)",
                 (order_id, pid, qty, unit_price, line_total)
             )
-            # reduce stock 
-            cursor.execute("UPDATE products SET stock = stock - {} WHERE product_id={}".format(qty, pid))
+            # reduce stock
+            cursor.execute("UPDATE products SET stock = stock - %s WHERE product_id=%s", (qty, pid))
             total_amount += line_total
 
-        cursor.execute("UPDATE orders SET total_amount={} WHERE order_id={}".format(total_amount, order_id))
+        cursor.execute("UPDATE orders SET total_amount=%s WHERE order_id=%s", (total_amount, order_id))
         mydb.commit()
-        print("Order {} created successfully. Total: ₹{}".format(order_id,round(total_amount,2)))
-        
+        print(f"Order {order_id} created successfully. Total: ₹{round(total_amount,2)}")
         generate_invoice(order_id)
     except Error as e:
         mydb.rollback()
         print("Failed to create order:", e)
-    print("\n")
 
 def list_orders():
     cursor.execute("""
@@ -346,33 +335,31 @@ def list_orders():
     rows = cursor.fetchall()
     print("\nOrders:")
     for r in rows:
-        print("OrderID:{} | Date:{} | Customer:{} | Status:{} | Total:₹{}".format(r[0],r[1],r[2],r[3],to_decimal(r[4])))
+        print(f"OrderID:{r[0]} | Date:{r[1]} | Customer:{r[2]} | Status:{r[3]} | Total:₹{to_decimal(r[4])}")
     if not rows:
         print("No orders found.")
-    print("\n")
 
 def view_order_details():
     oid = int(input("Enter Order ID: ").strip())
     cursor.execute("""
         SELECT o.order_id, o.order_date, c.name, c.email, o.status, o.total_amount
         FROM orders o LEFT JOIN customers c ON o.customer_id = c.customer_id
-        WHERE o.order_id={}
-    """.format(oid))
+        WHERE o.order_id=%s
+    """, (oid,))
     order = cursor.fetchone()
     if not order:
         print("Order not found.")
-        return None 
-    print("\nOrder {} | Date: {} | Customer: {} | Email: {} | Status: {} | Total: ₹{}".format(order[0],order[1],order[2],order[3],order[4],to_decimal(order[5])))
+        return
+    print(f"\nOrder {order[0]} | Date: {order[1]} | Customer: {order[2]} | Email: {order[3]} | Status: {order[4]} | Total: ₹{to_decimal(order[5])}")
     cursor.execute("""
         SELECT oi.item_id, p.sku, p.name, oi.quantity, oi.unit_price, oi.line_total
         FROM order_items oi LEFT JOIN products p ON oi.product_id = p.product_id
-        WHERE oi.order_id={}
-    """.format(oid))
+        WHERE oi.order_id=%s
+    """, (oid,))
     items = cursor.fetchall()
     print("\nItems:")
     for it in items:
         print(f"{it[0]} | SKU:{it[1]} | {it[2]} | Qty:{it[3]} | Unit:₹{to_decimal(it[4])} | Line:₹{to_decimal(it[5])}")
-    print("\n")
 
 def update_order_status():
     list_orders()
@@ -381,10 +368,9 @@ def update_order_status():
     if new_status not in ('Pending','Processing','Shipped','Delivered','Cancelled'):
         print("Invalid status.")
         return
-    cursor.execute("UPDATE orders SET status={} WHERE order_id={}".format(new_status, oid))
+    cursor.execute("UPDATE orders SET status=%s WHERE order_id=%s", (new_status, oid))
     mydb.commit()
     print("Order status updated.")
-    print("\n")
 
 # ---------------------------
 # 9) Exports & invoices
@@ -398,7 +384,6 @@ def export_products_csv():
         for r in rows:
             w.writerow([r[0], r[1], r[2], to_decimal(r[3]), r[4]])
     print("Products exported to products_export.csv")
-    print("\n")
 
 def export_orders_csv():
     cursor.execute("""
@@ -412,15 +397,14 @@ def export_orders_csv():
         for r in rows:
             w.writerow([r[0], r[1], r[2], r[3], to_decimal(r[4])])
     print("Orders exported to orders_export.csv")
-    print("\n")
 
 def generate_invoice(order_id):
     # create a simple text invoice
     cursor.execute("""
         SELECT o.order_id, o.order_date, c.name, c.email, c.phone, o.status, o.total_amount
         FROM orders o LEFT JOIN customers c ON o.customer_id = c.customer_id
-        WHERE o.order_id={}
-    """.format(order_id))
+        WHERE o.order_id=%s
+    """, (order_id,))
     order = cursor.fetchone()
     if not order:
         print("Cannot generate invoice: order not found.")
@@ -428,10 +412,10 @@ def generate_invoice(order_id):
     cursor.execute("""
         SELECT p.sku, p.name, oi.quantity, oi.unit_price, oi.line_total
         FROM order_items oi LEFT JOIN products p ON oi.product_id = p.product_id
-        WHERE oi.order_id={}
-    """.format(order_id))
+        WHERE oi.order_id=%s
+    """, (order_id,))
     items = cursor.fetchall()
-    filename = "Invoice_{}.txt".format(order_id)
+    filename = f"Invoice_{order_id}.txt"
     with open(filename, "w", encoding='utf-8') as f:
         f.write("----- Invoice -----\n")
         f.write(f"Order ID: {order[0]}\nDate: {order[1]}\nCustomer: {order[2]}\nEmail: {order[3]}\nPhone: {order[4]}\nStatus: {order[5]}\n\n")
@@ -440,49 +424,30 @@ def generate_invoice(order_id):
             f.write(f"{it[0]} | {it[1]} | Qty:{it[2]} | Unit:₹{to_decimal(it[3])} | Line:₹{to_decimal(it[4])}\n")
         f.write(f"\nTotal: ₹{to_decimal(order[6])}\n")
     print(f"Invoice generated: {filename}")
-    print("\n")
 
 # ---------------------------
 # 10) Main menu
 # ---------------------------
-
 def main_menu():
     while True:
-        print("\n")
-        print("=== E-commerce Product Management ===")
-        time.sleep(0.2)
-        print("1. List Categories")
-        time.sleep(0.2)
-        print("2. Add Category")
-        time.sleep(0.2)
-        print("3. List Products")
-        time.sleep(0.2)
-        print("4. Add Product")
-        time.sleep(0.2)
-        print("5. Update Product Stock")
-        time.sleep(0.2)
-        print("6. Search Products")
-        time.sleep(0.2)
-        print("7. List Customers")
-        time.sleep(0.2)
-        print("8. Add Customer")
-        time.sleep(0.2)
-        print("9. Create Order")
-        time.sleep(0.2)
-        print("10. List Orders")
-        time.sleep(0.2)
-        print("11. View Order Details")
-        time.sleep(0.2)
-        print("12. Update Order Status")
-        time.sleep(0.2)
-        print("13. Export Products CSV")
-        time.sleep(0.2)
-        print("14. Export Orders CSV")
-        time.sleep(0.2)
-        print("0. Exit")
-        time.sleep(0.2)
-        print("\n")
-        
+        print("""
+=== E-commerce Product Management ===
+1. List Categories
+2. Add Category
+3. List Products
+4. Add Product
+5. Update Product Stock
+6. Search Products
+7. List Customers
+8. Add Customer
+9. Create Order
+10. List Orders
+11. View Order Details
+12. Update Order Status
+13. Export Products CSV
+14. Export Orders CSV
+0. Exit
+""")
         ch = input("Enter choice: ").strip()
         if ch == "1":
             list_categories()
@@ -516,7 +481,7 @@ def main_menu():
             print("Goodbye!")
             break
         else:
-            print("Invalid choice. Try again...")
+            print("Invalid choice. Try again.")
 
 if __name__ == "__main__":
     try:
